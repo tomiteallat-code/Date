@@ -62,11 +62,11 @@
 
   /* the shy No button */
   #askRow { flex-direction: column; align-items: center; gap: 0; }
-  #noBtn { position: relative; margin-top: 56px; touch-action: none; }
-  #noBtn.free {
-    position: fixed; z-index: 10; margin: 0;
-    transition: left 1.1s cubic-bezier(.22,1,.36,1), top 1.1s cubic-bezier(.22,1,.36,1);
+  #noBtn {
+    position: relative; margin-top: 56px; touch-action: none;
+    transition: transform 1.8s cubic-bezier(.45,0,.25,1);
   }
+  @media (prefers-reduced-motion: reduce) { #noBtn { transition-duration: .6s; } }
 
   .plan-card { background: var(--chip); border-radius: 14px; padding: 16px 18px; text-align: left; margin-bottom: 20px; }
   .plan-card .step { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; }
@@ -210,39 +210,45 @@
 
   // ---- The No button that runs away ----
   const noBtn = $("noBtn");
+  let offX = 0, offY = 0; // how far No has drifted from its starting spot
   function runAway(px, py) {
-    const r = noBtn.getBoundingClientRect();
-    if (!noBtn.classList.contains("free")) {
-      noBtn.style.left = r.left + "px"; noBtn.style.top = r.top + "px";
-      noBtn.classList.add("free"); void noBtn.offsetWidth;
-    }
-    const pad = 16, w = r.width, h = r.height;
-    const maxX = window.innerWidth - w - pad, maxY = window.innerHeight - h - pad;
-    const cx = r.left + w / 2, cy = r.top + h / 2;
+    const r = noBtn.getBoundingClientRect();          // where it is now
+    const card = $("card").getBoundingClientRect();   // the ticket it must stay inside
+    // Read where it actually is mid-glide, so a new move starts from there.
+    const m = new DOMMatrix(getComputedStyle(noBtn).transform);
+    offX = m.m41; offY = m.m42;
+    noBtn.style.transform = `translate(${offX}px, ${offY}px)`;
+    const homeX = r.left - offX, homeY = r.top - offY; // where it started
+    const pad = 14, w = r.width, h = r.height;
     const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+    const minX = card.left + pad - homeX, maxX = card.right - pad - w - homeX;
+    const minY = card.top + pad - homeY,  maxY = card.bottom - pad - h - homeY;
+    const cx = r.left + w / 2, cy = r.top + h / 2;
 
-    // Glide a short distance directly away from the pointer, with a little wobble.
+    // Drift a short distance directly away from the pointer, with a little wobble.
     let angle = Math.atan2(cy - py, cx - px) + (Math.random() - 0.5) * 0.8;
-    const dist = 140 + Math.random() * 60;
-    let x = clamp(r.left + Math.cos(angle) * dist, pad, maxX);
-    let y = clamp(r.top + Math.sin(angle) * dist, pad, maxY);
+    const dist = 80 + Math.random() * 40;
+    let x = clamp(offX + Math.cos(angle) * dist, minX, maxX);
+    let y = clamp(offY + Math.sin(angle) * dist, minY, maxY);
 
-    // Cornered against an edge? Slide sideways toward the middle of the screen instead.
-    if (Math.hypot(x - r.left, y - r.top) < 70) {
-      angle = Math.atan2(window.innerHeight / 2 - cy, window.innerWidth / 2 - cx) + (Math.random() - 0.5) * 1.2;
-      x = clamp(r.left + Math.cos(angle) * dist, pad, maxX);
-      y = clamp(r.top + Math.sin(angle) * dist, pad, maxY);
+    // Stuck against the ticket's edge? Drift back toward the middle of the ticket instead.
+    if (Math.hypot(x - offX, y - offY) < 60) {
+      const midX = card.left + card.width / 2, midY = card.top + card.height / 2;
+      angle = Math.atan2(midY - cy, midX - cx) + (Math.random() - 0.5) * 1.2;
+      x = clamp(offX + Math.cos(angle) * dist, minX, maxX);
+      y = clamp(offY + Math.sin(angle) * dist, minY, maxY);
     }
-    noBtn.style.left = x + "px"; noBtn.style.top = y + "px";
+    offX = x; offY = y;
+    noBtn.style.transform = `translate(${offX}px, ${offY}px)`;
     lastMove = performance.now();
   }
   let lastMove = 0;
   document.addEventListener("pointermove", e => {
     if ($("s-ask").hidden) return;
-    if (performance.now() - lastMove < 350) return; // let each glide play out
+    if (performance.now() - lastMove < 1200) return; // let each glide mostly play out before moving again
     const r = noBtn.getBoundingClientRect();
     const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
-    if (d < 110) runAway(e.clientX, e.clientY);
+    if (d < 90) runAway(e.clientX, e.clientY);
   });
   ["pointerdown", "touchstart"].forEach(ev =>
     noBtn.addEventListener(ev, e => { e.preventDefault(); const t = e.touches ? e.touches[0] : e; runAway(t.clientX, t.clientY); }, { passive: false })
